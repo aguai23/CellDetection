@@ -37,7 +37,6 @@ class BaseDataProvider(object):
     
     channels = 1
     n_class = 2
-    
 
     def __init__(self, a_min=None, a_max=None):
         self.a_min = a_min if a_min is not None else -np.inf
@@ -99,7 +98,8 @@ class BaseDataProvider(object):
             Y[i] = labels
     
         return X, Y
-    
+
+
 class SimpleDataProvider(BaseDataProvider):
     """
     A simple data provider for numpy arrays. 
@@ -150,8 +150,9 @@ class ImageDataProvider(BaseDataProvider):
     
     """
     
-    def __init__(self, search_path, a_min=None, a_max=None, data_suffix=".tif", mask_suffix='_mask.tif', shuffle_data=True, n_class = 2):
-        super(ImageDataProvider, self).__init__(a_min, a_max)
+    def __init__(self, search_path, a_min=None, a_max=None, data_suffix=".jpg", mask_suffix='_mask.jpg',
+                 shuffle_data=True, n_class=2):
+        super().__init__(a_min, a_max)
         self.data_suffix = data_suffix
         self.mask_suffix = mask_suffix
         self.file_idx = -1
@@ -171,8 +172,7 @@ class ImageDataProvider(BaseDataProvider):
         
     def _find_data_files(self, search_path):
         all_files = glob.glob(search_path)
-        return [name for name in all_files if self.data_suffix in name and not self.mask_suffix in name]
-    
+        return [name for name in all_files if self.data_suffix in name and self.mask_suffix not in name]
     
     def _load_file(self, path, dtype=np.float32):
         return np.array(Image.open(path), dtype)

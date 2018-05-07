@@ -34,6 +34,7 @@ from tf_unet.layers import (weight_variable, weight_variable_devonc, bias_variab
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
+
 def create_conv_net(x, keep_prob, channels, n_class, layers=3, features_root=16, filter_size=3, pool_size=2, summaries=True):
     """
     Creates a new convolutional unet for the given parametrization.
@@ -162,7 +163,6 @@ def create_conv_net(x, keep_prob, channels, n_class, layers=3, features_root=16,
         variables.append(b1)
         variables.append(b2)
 
-    
     return output_map, variables, int(in_size - size)
 
 
@@ -289,6 +289,7 @@ class Unet(object):
         saver = tf.train.Saver()
         saver.restore(sess, model_path)
         logging.info("Model restored from file: %s" % model_path)
+
 
 class Trainer(object):
     """
