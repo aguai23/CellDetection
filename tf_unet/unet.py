@@ -24,7 +24,7 @@ import shutil
 import numpy as np
 from collections import OrderedDict
 import logging
-
+from matplotlib import pyplot as plt
 import tensorflow as tf
 
 from tf_unet import util
@@ -35,7 +35,8 @@ from tf_unet.layers import (weight_variable, weight_variable_devonc, bias_variab
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 
-def create_conv_net(x, keep_prob, channels, n_class, layers=3, features_root=16, filter_size=3, pool_size=2, summaries=True):
+def create_conv_net(x, keep_prob, channels, n_class, layers=3,
+                    features_root=16, filter_size=3, pool_size=2, summaries=True):
     """
     Creates a new convolutional unet for the given parametrization.
     
@@ -50,14 +51,16 @@ def create_conv_net(x, keep_prob, channels, n_class, layers=3, features_root=16,
     :param summaries: Flag if summaries should be created
     """
     
-    logging.info("Layers {layers}, features {features}, filter size {filter_size}x{filter_size}, pool size: {pool_size}x{pool_size}".format(layers=layers,
-                                                                                                           features=features_root,
-                                                                                                           filter_size=filter_size,
-                                                                                                           pool_size=pool_size))
+    logging.info("Layers {layers}, features {features}, "
+                 "filter size {filter_size}x{filter_size}, "
+                 "pool size: {pool_size}x{pool_size}".format(layers=layers,
+                                                             features=features_root,
+                                                             filter_size=filter_size,
+                                                             pool_size=pool_size))
     # Placeholder for the input image
     nx = tf.shape(x)[1]
     ny = tf.shape(x)[2]
-    x_image = tf.reshape(x, tf.stack([-1,nx,ny,channels]))
+    x_image = tf.reshape(x, tf.stack([-1, nx, ny, channels]))
     in_node = x_image
     batch_size = tf.shape(x_image)[0]
  
@@ -73,7 +76,7 @@ def create_conv_net(x, keep_prob, channels, n_class, layers=3, features_root=16,
     size = in_size
     # down layers
     for layer in range(0, layers):
-        features = 2**layer*features_root
+        features = features_root * (2**layer)
         stddev = np.sqrt(2 / (filter_size**2 * features))
         if layer == 0:
             w1 = weight_variable([filter_size, filter_size, channels, features], stddev)
@@ -186,16 +189,16 @@ class Unet(object):
         self.y = tf.placeholder("float", shape=[None, None, None, n_class])
         self.keep_prob = tf.placeholder(tf.float32) #dropout (keep probability)
         
-        logits, self.variables, self.offset = create_conv_net(self.x, self.keep_prob, channels, n_class, **kwargs)
+        self.logits, self.variables, self.offset = create_conv_net(self.x, self.keep_prob, channels, n_class, **kwargs)
         
-        self.cost = self._get_cost(logits, cost, cost_kwargs)
+        self.cost = self._get_cost(self.logits, cost, cost_kwargs)
         
         self.gradients_node = tf.gradients(self.cost, self.variables)
          
         self.cross_entropy = tf.reduce_mean(cross_entropy(tf.reshape(self.y, [-1, n_class]),
-                                                          tf.reshape(pixel_wise_softmax_2(logits), [-1, n_class])))
+                                                          tf.reshape(pixel_wise_softmax_2(self.logits), [-1, n_class])))
         
-        self.predicter = pixel_wise_softmax_2(logits)
+        self.predicter = pixel_wise_softmax_2(self.logits)
         self.correct_pred = tf.equal(tf.argmax(self.predicter, 3), tf.argmax(self.y, 3))
         self.accuracy = tf.reduce_mean(tf.cast(self.correct_pred, tf.float32))
         
@@ -260,10 +263,9 @@ class Unet(object):
         
             # Restore model weights from previously saved model
             self.restore(sess, model_path)
-            
             y_dummy = np.empty((x_test.shape[0], x_test.shape[1], x_test.shape[2], self.n_class))
-            prediction = sess.run(self.predicter, feed_dict={self.x: x_test, self.y: y_dummy, self.keep_prob: 1.})
-            
+            prediction, logits = sess.run([self.predicter, self.logits], feed_dict={self.x: x_test, self.y: y_dummy, self.keep_prob: 1.})
+            print(np.sum(logits[:,:,:,1]))
         return prediction
     
     def save(self, sess, model_path):
@@ -273,7 +275,7 @@ class Unet(object):
         :param sess: current session
         :param model_path: path to file system location
         """
-        
+        print(model_path)
         saver = tf.train.Saver()
         save_path = saver.save(sess, model_path)
         return save_path
@@ -314,9 +316,9 @@ class Trainer(object):
         
     def _get_optimizer(self, training_iters, global_step):
         if self.optimizer == "momentum":
-            learning_rate = self.opt_kwargs.pop("learning_rate", 0.2)
+            learning_rate = self.opt_kwargs.pop("learning_rate", 0.0002)
             decay_rate = self.opt_kwargs.pop("decay_rate", 0.95)
-            momentum = self.opt_kwargs.pop("momentum", 0.2)
+            momentum = self.opt_kwargs.pop("momentum", 0.02)
             
             self.learning_rate_node = tf.train.exponential_decay(learning_rate=learning_rate, 
                                                         global_step=global_step, 
@@ -375,9 +377,10 @@ class Trainer(object):
         
         return init
 
-    def train(self, data_provider, output_path, training_iters=10, epochs=100, dropout=0.75, display_step=1, restore=False, write_graph=False, prediction_path = 'prediction'):
+    def train(self, data_provider, output_path, training_iters=10, epochs=100, dropout=0.75,
+              display_step=10, restore=False, write_graph=False, prediction_path='prediction', save_epoch=5):
         """
-        Lauches the training process
+        Launches the training process
         
         :param data_provider: callable returning training and verification data
         :param output_path: path where to store checkpoints
@@ -415,9 +418,11 @@ class Trainer(object):
             avg_gradients = None
             for epoch in range(epochs):
                 total_loss = 0
+                if epoch % save_epoch == 0:
+                    self.net.save(sess, save_path + str(epoch))
                 for step in range((epoch*training_iters), ((epoch+1)*training_iters)):
                     batch_x, batch_y = data_provider(self.batch_size)
-                     
+
                     # Run optimization op (backprop)
                     _, loss, lr, gradients = sess.run((self.optimizer, self.net.cost, self.learning_rate_node, self.net.gradients_node), 
                                                       feed_dict={self.net.x: batch_x,
@@ -436,8 +441,7 @@ class Trainer(object):
 
                 self.output_epoch_stats(epoch, total_loss, training_iters, lr)
                 self.store_prediction(sess, test_x, test_y, "epoch_%s"%epoch)
-                    
-                save_path = self.net.save(sess, save_path)
+
             logging.info("Optimization Finished!")
             
             return save_path
@@ -467,19 +471,21 @@ class Trainer(object):
     
     def output_minibatch_stats(self, sess, summary_writer, step, batch_x, batch_y):
         # Calculate batch loss and accuracy
-        summary_str, loss, acc, predictions = sess.run([self.summary_op, 
+        summary_str, loss, acc, predictions, gradients = sess.run([self.summary_op,
                                                             self.net.cost, 
                                                             self.net.accuracy, 
-                                                            self.net.predicter], 
-                                                           feed_dict={self.net.x: batch_x,
+                                                            self.net.predicter,
+                                                            self.net.gradients_node],
+                                                            feed_dict={self.net.x: batch_x,
                                                                       self.net.y: batch_y,
                                                                       self.net.keep_prob: 1.})
         summary_writer.add_summary(summary_str, step)
         summary_writer.flush()
-        logging.info("Iter {:}, Minibatch Loss= {:.4f}, Training Accuracy= {:.4f}, Minibatch error= {:.1f}%".format(step,
-                                                                                                            loss,
-                                                                                                            acc,
-                                                                                                            error_rate(predictions, batch_y)))
+        logging.info("Iter {:}, Minibatch Loss= {:.4f}, Training Accuracy= {:.4f}, "
+                     "Minibatch error= {:.1f}%".format(step,
+                                                                           loss,
+                                                                           acc,
+                                                                           error_rate(predictions, batch_y)))
 
 def _update_avg_gradients(avg_gradients, gradients, step):
     if avg_gradients is None:

@@ -75,6 +75,7 @@ def to_rgb(img):
     img *= 255
     return img
 
+
 def crop_to_shape(data, shape):
     """
     Crops the array to the given image shape by removing the border (expects a tensor of shape [batches, nx, ny, channels].

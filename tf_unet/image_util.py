@@ -16,10 +16,11 @@ author: jakeret
 '''
 from __future__ import print_function, division, absolute_import, unicode_literals
 
-#import cv2
+import cv2
 import glob
 import numpy as np
 from PIL import Image
+
 
 class BaseDataProvider(object):
     """
@@ -175,8 +176,15 @@ class ImageDataProvider(BaseDataProvider):
         return [name for name in all_files if self.data_suffix in name and self.mask_suffix not in name]
     
     def _load_file(self, path, dtype=np.float32):
-        return np.array(Image.open(path), dtype)
+        data = cv2.imread(path).astype(dtype)
+        # average = np.average(data, axis=(0,1))
+        # std = np.std(data, axis=(0,1), dtype=dtype)
+        # data = (data - average) / std
+        return data
         # return np.squeeze(cv2.imread(image_name, cv2.IMREAD_GRAYSCALE))
+
+    def _load_mask(self, path, dtype=np.bool):
+        return cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype(dtype)
 
     def _cylce_file(self):
         self.file_idx += 1
@@ -189,8 +197,6 @@ class ImageDataProvider(BaseDataProvider):
         self._cylce_file()
         image_name = self.data_files[self.file_idx]
         label_name = image_name.replace(self.data_suffix, self.mask_suffix)
-        
         img = self._load_file(image_name, np.float32)
-        label = self._load_file(label_name, np.bool)
-    
+        label = self._load_mask(label_name)
         return img,label
