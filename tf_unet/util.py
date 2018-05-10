@@ -20,7 +20,7 @@ author: jakeret
 from __future__ import print_function, division, absolute_import, unicode_literals
 import numpy as np
 from PIL import Image
-
+from skimage import transform
 def plot_prediction(x_test, y_test, prediction, save=False):
     import matplotlib
     import matplotlib.pyplot as plt
@@ -113,3 +113,23 @@ def save_image(img, path):
     """
     Image.fromarray(img.round().astype(np.uint8)).save(path, 'JPEG', dpi=[300,300], quality=90)
 
+def single_dice(predict, mask):
+    """
+    Compute result dice
+    :param predict:
+    :param mask:
+    :return:
+    """
+    predict = predict.astype(np.bool)
+    mask = mask.astype(np.bool)
+    if len(predict.shape) > 2:
+        print("predict value should convert (%d,%d)"%(mask.shape[0], mask.shape[1]))
+    if predict.shape[1]!=mask.shape[1]:
+        predict = transform.resize(predict, mask.shape)
+    predict_ = np.sum(predict==True)
+    mask_ = np.sum(mask==True)
+    intersect_part = np.bitwise_and(predict, mask)
+    # image_util.draw(intersect_part)
+    intersect_ = np.sum(intersect_part == True)
+    dice = 2.0*intersect_/(predict_+mask_)
+    return dice
