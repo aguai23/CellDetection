@@ -20,7 +20,8 @@ author: jakeret
 from __future__ import print_function, division, absolute_import, unicode_literals
 import numpy as np
 from PIL import Image
-
+import scipy.misc as mc
+import tensorflow as tf
 def plot_prediction(x_test, y_test, prediction, save=False):
     import matplotlib
     import matplotlib.pyplot as plt
@@ -85,7 +86,10 @@ def crop_to_shape(data, shape):
     """
     offset0 = (data.shape[1] - shape[1])//2
     offset1 = (data.shape[2] - shape[2])//2
+    if offset0 == 0 and offset1 == 0:
+        return data
     return data[:, offset0:(-offset0), offset1:(-offset1)]
+
 
 def combine_img_prediction(data, gt, pred):
     """

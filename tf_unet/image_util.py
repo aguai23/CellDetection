@@ -138,7 +138,7 @@ class ImageDataProvider(BaseDataProvider):
     e.g. 'train/fish_1.tif' and 'train/fish_1_mask.tif'
 
     Usage:
-    data_provider = ImageDataProvider("..fishes/train/*.tif")
+    data_provider = ImageDataProvider("..fishes/train/*.jpg")
         
     :param search_path: a glob search pattern to find all data and label images
     :param a_min: (optional) min value used for clipping

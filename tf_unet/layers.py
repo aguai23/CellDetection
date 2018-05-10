@@ -35,17 +35,19 @@ def bias_variable(shape):
 
 
 def conv2d(x, W,keep_prob_):
-    conv_2d = tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='VALID')
+    conv_2d = tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='SAME')
     return tf.nn.dropout(conv_2d, keep_prob_)
 
 
 def deconv2d(x, W,stride):
     x_shape = tf.shape(x)
     output_shape = tf.stack([x_shape[0], x_shape[1]*2, x_shape[2]*2, x_shape[3]//2])
-    return tf.nn.conv2d_transpose(x, W, output_shape, strides=[1, stride, stride, 1], padding='VALID')
+    return tf.nn.conv2d_transpose(x, W, output_shape, strides=[1, stride, stride, 1], padding='SAME')
+
 
 def max_pool(x,n):
-    return tf.nn.max_pool(x, ksize=[1, n, n, 1], strides=[1, n, n, 1], padding='VALID')
+    return tf.nn.max_pool(x, ksize=[1, n, n, 1], strides=[1, n, n, 1], padding='SAME')
+
 
 def crop_and_concat(x1,x2):
     x1_shape = tf.shape(x1)
@@ -55,6 +57,7 @@ def crop_and_concat(x1,x2):
     size = [-1, x2_shape[1], x2_shape[2], -1]
     x1_crop = tf.slice(x1, offsets, size)
     return tf.concat([x1_crop, x2], 3)   
+
 
 def pixel_wise_softmax(output_map):
     exponential_map = tf.exp(output_map)
@@ -66,7 +69,6 @@ def pixel_wise_softmax_2(output_map):
     sum_exp = tf.reduce_sum(exponential_map, 3, keep_dims=True)
     tensor_sum_exp = tf.tile(sum_exp, tf.stack([1, 1, 1, tf.shape(output_map)[3]]))
     return tf.div(exponential_map,tensor_sum_exp)
-
 
 
 def cross_entropy(y_,output_map):

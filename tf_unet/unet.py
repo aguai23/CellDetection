@@ -166,7 +166,7 @@ def create_conv_net(x, keep_prob, channels, n_class, layers=3,
         variables.append(b1)
         variables.append(b2)
 
-    return output_map, variables, int(in_size - size)
+    return output_map, variables, int(in_size - size), convs[1][1]
 
 
 class Unet(object):
@@ -187,9 +187,10 @@ class Unet(object):
         
         self.x = tf.placeholder("float", shape=[None, None, None, channels])
         self.y = tf.placeholder("float", shape=[None, None, None, n_class])
-        self.keep_prob = tf.placeholder(tf.float32) #dropout (keep probability)
-        
-        self.logits, self.variables, self.offset = create_conv_net(self.x, self.keep_prob, channels, n_class, **kwargs)
+        # dropout (keep probability)
+        self.keep_prob = tf.placeholder(tf.float32)
+
+        self.logits, self.variables, self.offset, self.final_conv = create_conv_net(self.x, self.keep_prob, channels, n_class, **kwargs)
         
         self.cost = self._get_cost(self.logits, cost, cost_kwargs)
         
@@ -264,8 +265,10 @@ class Unet(object):
             # Restore model weights from previously saved model
             self.restore(sess, model_path)
             y_dummy = np.empty((x_test.shape[0], x_test.shape[1], x_test.shape[2], self.n_class))
-            prediction, logits = sess.run([self.predicter, self.logits], feed_dict={self.x: x_test, self.y: y_dummy, self.keep_prob: 1.})
+            prediction, logits, final_conv = sess.run([self.predicter, self.logits, self.final_conv], feed_dict={self.x: x_test, self.y: y_dummy, self.keep_prob: 1.})
             print(np.sum(logits[:,:,:,1]))
+            print(logits.shape)
+            print(final_conv.shape)
         return prediction
     
     def save(self, sess, model_path):
@@ -330,7 +333,7 @@ class Trainer(object):
                                                    **self.opt_kwargs).minimize(self.net.cost, 
                                                                                 global_step=global_step)
         elif self.optimizer == "adam":
-            learning_rate = self.opt_kwargs.pop("learning_rate", 0.001)
+            learning_rate = self.opt_kwargs.pop("learning_rate", 0.0001)
             self.learning_rate_node = tf.Variable(learning_rate)
             
             optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate_node, 
@@ -382,6 +385,7 @@ class Trainer(object):
         """
         Launches the training process
         
+        :param save_epoch: save model after certain epoch
         :param data_provider: callable returning training and verification data
         :param output_path: path where to store checkpoints
         :param training_iters: number of training mini batch iteration
@@ -411,7 +415,6 @@ class Trainer(object):
             
             test_x, test_y = data_provider(self.verification_batch_size)
             pred_shape = self.store_prediction(sess, test_x, test_y, "_init")
-            
             summary_writer = tf.summary.FileWriter(output_path, graph=sess.graph)
             logging.info("Start optimization")
             
@@ -447,19 +450,26 @@ class Trainer(object):
             return save_path
         
     def store_prediction(self, sess, batch_x, batch_y, name):
+        """
+        calculate stats on verification data
+        :param sess:
+        :param batch_x: test_x
+        :param batch_y: test_y
+        :param name: save prediction result as name
+        :return:
+        """
         prediction = sess.run(self.net.predicter, feed_dict={self.net.x: batch_x, 
                                                              self.net.y: batch_y, 
                                                              self.net.keep_prob: 1.})
         pred_shape = prediction.shape
-        
         loss = sess.run(self.net.cost, feed_dict={self.net.x: batch_x, 
-                                                       self.net.y: util.crop_to_shape(batch_y, pred_shape), 
-                                                       self.net.keep_prob: 1.})
+                                                  self.net.y: util.crop_to_shape(batch_y, pred_shape),
+                                                  self.net.keep_prob: 1.})
         
         logging.info("Verification error= {:.1f}%, loss= {:.4f}".format(error_rate(prediction,
-                                                                          util.crop_to_shape(batch_y,
-                                                                                             prediction.shape)),
-                                                                          loss))
+                                                                        util.crop_to_shape(batch_y,
+                                                                                           prediction.shape)),
+                                                                        loss))
               
         img = util.combine_img_prediction(batch_x, batch_y, prediction)
         util.save_image(img, "%s/%s.jpg"%(self.prediction_path, name))
