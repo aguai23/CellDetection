@@ -20,6 +20,7 @@ import cv2
 import glob
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
 
 
 class BaseDataProvider(object):
@@ -45,7 +46,6 @@ class BaseDataProvider(object):
 
     def _load_data_and_label(self):
         data, label = self._next_data()
-            
         train_data = self._process_data(data)
         labels = self._process_labels(label)
         
@@ -152,29 +152,48 @@ class ImageDataProvider(BaseDataProvider):
     """
     
     def __init__(self, search_path, a_min=None, a_max=None, data_suffix=".jpg", mask_suffix='_mask.jpg',
-                 shuffle_data=True, n_class=2):
+                 shuffle_data=True, n_class=2, data_augment=True):
         super().__init__(a_min, a_max)
         self.data_suffix = data_suffix
         self.mask_suffix = mask_suffix
-        self.file_idx = -1
         self.shuffle_data = shuffle_data
         self.n_class = n_class
-        
+        self.data_augment = data_augment
         self.data_files = self._find_data_files(search_path)
-        
+        self.data_array = []
+        self.mask_array = []
+        self.data_index = -1
+
         if self.shuffle_data:
             np.random.shuffle(self.data_files)
         
         assert len(self.data_files) > 0, "No training files"
         print("Number of files used: %s" % len(self.data_files))
-        
+
+        self._load_data_from_file()
+
         img = self._load_file(self.data_files[0])
         self.channels = 1 if len(img.shape) == 2 else img.shape[-1]
         
     def _find_data_files(self, search_path):
         all_files = glob.glob(search_path)
         return [name for name in all_files if self.data_suffix in name and self.mask_suffix not in name]
-    
+
+    def _load_data_from_file(self):
+        for file_name in self.data_files:
+            mask_name = file_name.replace(self.data_suffix, self.mask_suffix)
+            data_array = self._load_file(file_name)
+            mask_array = self._load_mask(mask_name)
+            self.data_array.append(data_array)
+            self.mask_array.append(mask_array)
+            if self.data_augment:
+                self.data_array.append(np.rot90(data_array, 1, (0, 1)))
+                self.mask_array.append(np.rot90(mask_array, 1, (0, 1)))
+                self.data_array.append(np.rot90(data_array, 2, (0, 1)))
+                self.mask_array.append(np.rot90(mask_array, 2, (0, 1)))
+                self.data_array.append(np.rot90(data_array, 3, (0, 1)))
+                self.mask_array.append(np.rot90(mask_array, 3, (0, 1)))
+
     def _load_file(self, path, dtype=np.float32):
         data = cv2.imread(path).astype(dtype)
         # average = np.average(data, axis=(0,1))
@@ -185,18 +204,9 @@ class ImageDataProvider(BaseDataProvider):
 
     def _load_mask(self, path, dtype=np.bool):
         return cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype(dtype)
-
-    def _cylce_file(self):
-        self.file_idx += 1
-        if self.file_idx >= len(self.data_files):
-            self.file_idx = 0 
-            if self.shuffle_data:
-                np.random.shuffle(self.data_files)
         
     def _next_data(self):
-        self._cylce_file()
-        image_name = self.data_files[self.file_idx]
-        label_name = image_name.replace(self.data_suffix, self.mask_suffix)
-        img = self._load_file(image_name, np.float32)
-        label = self._load_mask(label_name)
-        return img,label
+        self.data_index += 1
+        if self.data_index >= len(self.data_array):
+            self.data_index = 0
+        return self.data_array[self.data_index], self.mask_array[self.data_index]
