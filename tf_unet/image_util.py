@@ -44,17 +44,18 @@ class BaseDataProvider(object):
         self.a_max = a_max if a_min is not None else np.inf
 
     def _load_data_and_label(self):
-        data, label = self._next_data()
-            
+        if not self.is_testing:
+            data, label = self._next_data()
+            labels = self._process_labels(label)
+        else:
+            data = self._next_data()
         train_data = self._process_data(data)
-        labels = self._process_labels(label)
-        
-        train_data, labels = self._post_process(train_data, labels)
-        
         nx = train_data.shape[1]
         ny = train_data.shape[0]
-
-        return train_data.reshape(1, ny, nx, self.channels), labels.reshape(1, ny, nx, self.n_class),
+        if not self.is_testing:
+            return train_data.reshape(1, ny, nx, self.channels), labels.reshape(1, ny, nx, self.n_class)
+        else:
+            return  train_data.reshape(1, ny, nx, self.channels)
     
     def _process_labels(self, label):
         if self.n_class == 2:
@@ -84,21 +85,30 @@ class BaseDataProvider(object):
         return data, labels
     
     def __call__(self, n):
-        train_data, labels = self._load_data_and_label()
+        if not self.is_testing:
+            train_data, labels = self._load_data_and_label()
+        else:
+            train_data = self._load_data_and_label()
         nx = train_data.shape[1]
         ny = train_data.shape[2]
-    
+
         X = np.zeros((n, nx, ny, self.channels))
-        Y = np.zeros((n, nx, ny, self.n_class))
-    
+        if not self.is_testing:
+            Y = np.zeros((n, nx, ny, self.n_class))
+            Y[0] = labels
         X[0] = train_data
-        Y[0] = labels
+
         for i in range(1, n):
-            train_data, labels = self._load_data_and_label()
+            if not self.is_testing:
+                train_data, labels = self._load_data_and_label()
+                Y[i] = labels
+            else:
+                train_data = self._load_data_and_label()
             X[i] = train_data
-            Y[i] = labels
-    
-        return X, Y
+        if not self.is_testing:
+            return X, Y
+        else:
+            return X
 
 
 class SimpleDataProvider(BaseDataProvider):
@@ -152,8 +162,8 @@ class ImageDataProvider(BaseDataProvider):
     """
     
     def __init__(self, search_path, a_min=None, a_max=None, data_suffix=".jpg", mask_suffix='_mask.jpg',
-                 shuffle_data=True, n_class=2):
-        super().__init__(a_min, a_max)
+                 shuffle_data=True, n_class=2, is_testing=False):
+        super(ImageDataProvider, self).__init__(a_min, a_max)
         self.data_suffix = data_suffix
         self.mask_suffix = mask_suffix
         self.file_idx = -1
@@ -161,7 +171,7 @@ class ImageDataProvider(BaseDataProvider):
         self.n_class = n_class
         
         self.data_files = self._find_data_files(search_path)
-        
+        self.is_testing = is_testing
         if self.shuffle_data:
             np.random.shuffle(self.data_files)
         
@@ -199,4 +209,7 @@ class ImageDataProvider(BaseDataProvider):
         label_name = image_name.replace(self.data_suffix, self.mask_suffix)
         img = self._load_file(image_name, np.float32)
         label = self._load_mask(label_name)
-        return img,label
+        if not self.is_testing:
+            return img,label
+        else:
+            return img
