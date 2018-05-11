@@ -120,12 +120,12 @@ def single_dice(predict, mask):
     :param mask:
     :return:
     """
+    if len(predict.shape) > 2:
+        print("predict value should convert (%d,%d)" % (mask.shape[0], mask.shape[1]))
+    if predict.shape[1] != mask.shape[1]:
+        predict = transform.resize(predict, mask.shape)
     predict = predict.astype(np.bool)
     mask = mask.astype(np.bool)
-    if len(predict.shape) > 2:
-        print("predict value should convert (%d,%d)"%(mask.shape[0], mask.shape[1]))
-    if predict.shape[1]!=mask.shape[1]:
-        predict = transform.resize(predict, mask.shape)
     predict_ = np.sum(predict==True)
     mask_ = np.sum(mask==True)
     intersect_part = np.bitwise_and(predict, mask)
@@ -133,3 +133,16 @@ def single_dice(predict, mask):
     intersect_ = np.sum(intersect_part == True)
     dice = 2.0*intersect_/(predict_+mask_)
     return dice
+def mean_dice(predict, label):
+    '''
+    :param predict: batch*h*w*c,c=2
+    :param label: batch*h*w*c,c=2
+    :return: mean dice
+    '''
+    mean_dice = 0
+    for i in range(predict.shape[0]):
+        prediction = np.argmax(predict[i, ...], axis=2)
+        label_ = np.argmax(label[i, ...], axis=2)
+        s_dice = single_dice(prediction, label_)
+        mean_dice += s_dice
+    return mean_dice/predict.shape[0]
