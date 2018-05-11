@@ -21,6 +21,7 @@ import glob
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
+import os
 
 
 class BaseDataProvider(object):
@@ -45,19 +46,13 @@ class BaseDataProvider(object):
         self.a_max = a_max if a_min is not None else np.inf
 
     def _load_data_and_label(self):
-        if not self.is_testing:
-            data, label = self._next_data()
-            labels = self._process_labels(label)
-        else:
-            data = self._next_data()
-     
+
+        data, label = self._next_data()
+        labels = self._process_labels(label)
         train_data = self._process_data(data)
         nx = train_data.shape[1]
         ny = train_data.shape[0]
-        if not self.is_testing:
-            return train_data.reshape(1, ny, nx, self.channels), labels.reshape(1, ny, nx, self.n_class)
-        else:
-            return  train_data.reshape(1, ny, nx, self.channels)
+        return train_data.reshape(1, ny, nx, self.channels), labels.reshape(1, ny, nx, self.n_class)
     
     def _process_labels(self, label):
         if self.n_class == 2:
@@ -87,30 +82,23 @@ class BaseDataProvider(object):
         return data, labels
     
     def __call__(self, n):
-        if not self.is_testing:
-            train_data, labels = self._load_data_and_label()
-        else:
-            train_data = self._load_data_and_label()
+
+        train_data, labels = self._load_data_and_label()
+
         nx = train_data.shape[1]
         ny = train_data.shape[2]
 
         X = np.zeros((n, nx, ny, self.channels))
-        if not self.is_testing:
-            Y = np.zeros((n, nx, ny, self.n_class))
-            Y[0] = labels
+        Y = np.zeros((n, nx, ny, self.n_class))
+        Y[0] = labels
         X[0] = train_data
 
         for i in range(1, n):
-            if not self.is_testing:
-                train_data, labels = self._load_data_and_label()
-                Y[i] = labels
-            else:
-                train_data = self._load_data_and_label()
+            train_data, labels = self._load_data_and_label()
+            Y[i] = labels
             X[i] = train_data
-        if not self.is_testing:
-            return X, Y
-        else:
-            return X
+
+        return X, Y
 
 
 class SimpleDataProvider(BaseDataProvider):
@@ -164,7 +152,7 @@ class ImageDataProvider(BaseDataProvider):
     """
     
     def __init__(self, search_path, a_min=None, a_max=None, data_suffix=".jpg", mask_suffix='_mask.jpg',
-                 shuffle_data=True, n_class=2, is_testing=False,data_augment=True):
+                 shuffle_data=True, n_class=2,data_augment=True):
    
         super().__init__(a_min, a_max)
         self.data_suffix = data_suffix
@@ -173,7 +161,6 @@ class ImageDataProvider(BaseDataProvider):
         self.n_class = n_class
         self.data_augment = data_augment
         self.data_files = self._find_data_files(search_path)
-        self.is_testing = is_testing
         self.data_array = []
         self.mask_array = []
         self.data_index = -1
@@ -223,8 +210,96 @@ class ImageDataProvider(BaseDataProvider):
         self.data_index += 1
         if self.data_index >= len(self.data_array):
             self.data_index = 0
-        if not self.is_testing:
-            return self.data_array[self.data_index], self.mask_array[self.data_index]
+
+        return self.data_array[self.data_index], self.mask_array[self.data_index]
+
+
+class ImageTestBaseProvider(BaseDataProvider):
+    def __init__(self, test_path, data_suffix=".jpg", mask_suffix='_mask.jpg', is_dice=False,
+        a_min = None, a_max = None):
+        super().__init__(a_min, a_max)
+        self.is_dice = is_dice
+        self.data_file = glob.glob(os.path.join(test_path, "*" + data_suffix))
+        if not is_dice:
+            self.mask_file = glob.glob(os.path.join(test_path, "*" + mask_suffix))
+            self.mask_file.sort()
+            self.data_file =[name for name in self.data_file if name not in self.mask_file]
+        self.data_file.sort()
+    def _load_mask(self, path, dtype=np.bool):
+        return cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype(dtype)
+    def _load_file(self, path, dtype=np.float32):
+        data = cv2.imread(path).astype(dtype)
+        return data
+
+
+    def _process_labels(self, label):
+        if self.n_class == 2:
+            nx = label.shape[1]
+            ny = label.shape[0]
+            labels = np.zeros((ny, nx, self.n_class), dtype=np.float32)
+            labels[..., 1] = label
+            labels[..., 0] = ~label
+            return labels
+
+        return label
+    def _process_data(self, data):
+        # normalization
+        data = np.clip(np.fabs(data), self.a_min, self.a_max)
+        data -= np.amin(data)
+        data /= np.amax(data)
+        return data
+    def __getitem__(self, item):
+        data = self._load_file(self.data_file[item], dtype=np.float32)
+        data = self._process_data(data)
+        data = data[np.newaxis, ...]
+        if not self.is_dice:
+            mask = self._load_mask(self.mask_file[item], dtype=np.bool)
+            mask = self._process_labels(mask)
+            mask = mask[np.newaxis, ...]
+            return data, mask
         else:
-            return self.data_array[self.data_index]
-        
+            return data
+    def __len__(self):
+        return len(self.data_file)
+class ImageTestProvider(object):
+    def __init__(self, test_path, batch_size=1, data_suffix=".jpg", mask_suffix='_mask.jpg', is_dice=False,is_shuffle=False):
+        super().__init__()
+        self.ImageTestBaseProvider = ImageTestBaseProvider(test_path, data_suffix, mask_suffix, is_dice)
+        self.len= int(len(self.ImageTestBaseProvider)/batch_size)
+        self.batch_size = batch_size
+        self.shuffle = is_shuffle
+        self.sample = self.Sample()
+        self.is_dice = is_dice
+
+    def Sample(self):
+        list_i = list(range(len(self.ImageTestBaseProvider)))
+        if self.shuffle:
+            np.random.shuffle(list_i)
+        list_sample = []
+        index=0
+        for i in range(self.len):
+            list_subsample =list_i[index:index+self.batch_size]
+            index = index+self.batch_size
+            list_sample.append(list_subsample)
+        return list_sample
+
+    def __getitem__(self, item):
+        list =[]
+        if not self.is_dice:
+            list_label =[]
+        for index in self.sample[item]:
+            image = self.ImageTestBaseProvider[index]
+
+            if not self.is_dice:
+                list.append(image[0])
+                list_label.append(image[1])
+            else:
+                list.append(image)
+        if not self.is_dice:
+            return np.concatenate(list, axis=0), np.concatenate(list_label, axis=0)
+        else:
+            return np.concatenate(list,axis=0)
+
+    def __len__(self):
+        return self.len
+
