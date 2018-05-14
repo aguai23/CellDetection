@@ -107,6 +107,7 @@ def combine_img_prediction(data, gt, pred):
                           to_rgb(pred[..., 1].reshape(-1, ny, 1))), axis=1)
     return img
 
+
 def save_image(img, path):
     """
     Writes the image to disk
@@ -115,6 +116,7 @@ def save_image(img, path):
     :param path: the target path
     """
     Image.fromarray(img.round().astype(np.uint8)).save(path, 'JPEG', dpi=[300,300], quality=90)
+
 
 def single_dice(predict, mask):
     """
@@ -136,6 +138,8 @@ def single_dice(predict, mask):
     intersect_ = np.sum(intersect_part == True)
     dice = 2.0*intersect_/(predict_+mask_)
     return dice
+
+
 def mean_dice(predict, label):
     '''
     :param predict: batch*h*w*c,c=2

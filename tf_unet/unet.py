@@ -412,8 +412,10 @@ class Trainer(object):
                 ckpt = tf.train.get_checkpoint_state(output_path)
                 if ckpt and ckpt.model_checkpoint_path:
                     self.net.restore(sess, ckpt.model_checkpoint_path)
-            
-            test_x, test_y = data_provider(self.verification_batch_size)
+
+            test_size = data_provider.get_test_size()
+            logging.info("test size is " + str(test_size))
+            test_x, test_y = data_provider(test_size)
             pred_shape = self.store_prediction(sess, test_x, test_y, "_init")
             summary_writer = tf.summary.FileWriter(output_path, graph=sess.graph)
             logging.info("Start optimization")
@@ -497,6 +499,7 @@ class Trainer(object):
                                                                            acc,
                                                                            error_rate(predictions, batch_y)))
 
+
 def _update_avg_gradients(avg_gradients, gradients, step):
     if avg_gradients is None:
         avg_gradients = [np.zeros_like(gradient) for gradient in gradients]
@@ -504,6 +507,7 @@ def _update_avg_gradients(avg_gradients, gradients, step):
         avg_gradients[i] = (avg_gradients[i] * (1.0 - (1.0 / (step+1)))) + (gradients[i] / (step+1))
         
     return avg_gradients
+
 
 def error_rate(predictions, labels):
     """

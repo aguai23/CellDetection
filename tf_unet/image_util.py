@@ -45,9 +45,9 @@ class BaseDataProvider(object):
         self.a_min = a_min if a_min is not None else -np.inf
         self.a_max = a_max if a_min is not None else np.inf
 
-    def _load_data_and_label(self):
+    def _load_data_and_label(self, test=False):
 
-        data, label = self._next_data()
+        data, label = self._next_data(test=test)
         labels = self._process_labels(label)
         train_data = self._process_data(data)
         nx = train_data.shape[1]
@@ -81,7 +81,7 @@ class BaseDataProvider(object):
         """
         return data, labels
     
-    def __call__(self, n):
+    def __call__(self, n, test=False):
 
         train_data, labels = self._load_data_and_label()
 
@@ -94,7 +94,7 @@ class BaseDataProvider(object):
         X[0] = train_data
 
         for i in range(1, n):
-            train_data, labels = self._load_data_and_label()
+            train_data, labels = self._load_data_and_label(test=test)
             Y[i] = labels
             X[i] = train_data
 
@@ -152,7 +152,7 @@ class ImageDataProvider(BaseDataProvider):
     """
     
     def __init__(self, search_path, a_min=None, a_max=None, data_suffix=".jpg", mask_suffix='_mask.jpg',
-                 shuffle_data=True, n_class=2,data_augment=True):
+                 shuffle_data=True, n_class=2, data_augment=True):
    
         super().__init__(a_min, a_max)
         self.data_suffix = data_suffix
@@ -161,9 +161,16 @@ class ImageDataProvider(BaseDataProvider):
         self.n_class = n_class
         self.data_augment = data_augment
         self.data_files = self._find_data_files(search_path)
+
+        # training data array
         self.data_array = []
         self.mask_array = []
+        # mask data array
+        self.test_data_array = []
+        self.test_mask_array = []
+        self.test_percent = 0.2
         self.data_index = -1
+        self.test_index = -1
 
         if self.shuffle_data:
             np.random.shuffle(self.data_files)
@@ -180,33 +187,55 @@ class ImageDataProvider(BaseDataProvider):
         all_files = glob.glob(search_path)
         return [name for name in all_files if self.data_suffix in name and self.mask_suffix not in name]
 
+    def get_test_size(self):
+        return len(self.test_data_array)
+
     def _load_data_from_file(self):
-        for file_name in self.data_files:
+        test_index = int(len(self.data_files) * self.test_percent)
+
+        for file_name in self.data_files[:test_index]:
+            mask_name = file_name.replace(self.data_suffix, self.mask_suffix)
+            data_array = self._load_file(file_name)
+            mask_array = self._load_mask(mask_name)
+            self.test_data_array.append(data_array)
+            self.test_mask_array.append(mask_array)
+
+        for file_name in self.data_files[test_index:]:
             mask_name = file_name.replace(self.data_suffix, self.mask_suffix)
             data_array = self._load_file(file_name)
             mask_array = self._load_mask(mask_name)
             self.data_array.append(data_array)
             self.mask_array.append(mask_array)
             if self.data_augment:
-                self.data_array.append(np.rot90(data_array, 1, (0, 1)))
-                self.mask_array.append(np.rot90(mask_array, 1, (0, 1)))
-                self.data_array.append(np.rot90(data_array, 2, (0, 1)))
-                self.mask_array.append(np.rot90(mask_array, 2, (0, 1)))
-                self.data_array.append(np.rot90(data_array, 3, (0, 1)))
-                self.mask_array.append(np.rot90(mask_array, 3, (0, 1)))
+                self.augment_data(data_array, mask_array)
+
+    def augment_data(self, data_array, mask_array):
+        """
+        data augmentation function
+        :param data_array: the image data array
+        :param mask_array: corresponding mask array
+        :return:
+        """
+        self.data_array.append(np.rot90(data_array, 1, (0, 1)))
+        self.mask_array.append(np.rot90(mask_array, 1, (0, 1)))
+        self.data_array.append(np.rot90(data_array, 2, (0, 1)))
+        self.mask_array.append(np.rot90(mask_array, 2, (0, 1)))
+        self.data_array.append(np.rot90(data_array, 3, (0, 1)))
+        self.mask_array.append(np.rot90(mask_array, 3, (0, 1)))
 
     def _load_file(self, path, dtype=np.float32):
         data = cv2.imread(path).astype(dtype)
-        # average = np.average(data, axis=(0,1))
-        # std = np.std(data, axis=(0,1), dtype=dtype)
-        # data = (data - average) / std
         return data
-        # return np.squeeze(cv2.imread(image_name, cv2.IMREAD_GRAYSCALE))
 
     def _load_mask(self, path, dtype=np.bool):
         return cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype(dtype)
         
-    def _next_data(self):
+    def _next_data(self, test=False):
+
+        if test:
+            self.test_index += 1
+            return self.test_data_array[self.test_index], self.test_mask_array[self.test_index]
+
         self.data_index += 1
         if self.data_index >= len(self.data_array):
             self.data_index = 0
