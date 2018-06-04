@@ -148,7 +148,6 @@ class Trainer(object):
 
             test_size = data_provider.get_test_size()
             logging.info("test size is " + str(test_size))
-            test_size = 1
             test_x, test_y = data_provider(test_size)
             pred_shape = self.store_prediction(sess, test_x, test_y, "_init")
             summary_writer = tf.summary.FileWriter(output_path, graph=sess.graph)
